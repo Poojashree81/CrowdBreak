@@ -1,0 +1,11 @@
+# Sensitive credentials
+service-account-key.json
+*.json
+
+# Python environment
+venv/
+__pycache__/
+
+# Large data files
+data/
+*.csv

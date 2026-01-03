@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CrowdBreak - AI-Powered Crowd Safety Intelligence</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBWiXIdzW-bUGKTzMeYjyuqUaSSZ--FbWw&libraries=visualization&callback=initMap"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <h1>🌍 CrowdBreak</h1>
+      <p>Camera-Free • Privacy-Safe • Real-Time Stampede Prevention</p>
+    </div>
+    <button id="theme-toggle" class="theme-btn" aria-label="Toggle dark mode">
+      <span class="material-icons">dark_mode</span>
+    </button>
+  </header>
+
+  <div class="simulation-controls">
+    <div class="control-group">
+      <label for="event-mode"><span class="material-icons">settings_input_component</span> Scenario Mode:</label>
+      <select id="event-mode" class="event-select">
+        <option value="normal">Normal Day</option>
+        <option value="festival">Festival (Deepavali/Pongal)</option>
+        <option value="religious">Religious Gathering</option>
+        <option value="protest">Protest / Strike</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="search-section">
+    <div class="search-container">
+      <div class="search-input-wrapper">
+        <span class="material-icons search-icon">search</span>
+        <input type="text" id="search-input" placeholder="Search a state (e.g., Maharashtra, Delhi)" autocomplete="off"/>
+        <div id="suggestions" class="suggestions-box"></div>
+      </div>
+      <div class="button-group">
+        <button id="search-btn" class="action-btn primary">Show Heatmap</button>
+        <button id="reset-view" class="action-btn secondary">Show All India</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert-bar" class="alert-banner alert-low">Search a state to activate crowd monitoring</div>
+  <div id="map" class="map-container"></div>
+
+  <section class="dashboard-section">
+    <div class="dashboard-grid">
+      <div class="stat-card even-card">
+        <div class="card-header"><span class="material-icons">warning_amber</span><h3>Current Risk Level</h3></div>
+        <div id="risk-level" class="risk-display">—</div>
+      </div>
+      <div class="stat-card even-card">
+        <div class="card-header"><span class="material-icons">signal_cellular_alt</span><h3>Active Mobile Signals</h3></div>
+        <div id="crowd-estimate" class="signal-count">Search a state</div>
+      </div>
+      <div class="stat-card even-card">
+        <div class="card-header"><span class="material-icons">analytics</span><h3>Gemini AI Analysis</h3></div>
+        <div id="explanation" class="analysis-text">No state selected</div>
+      </div>
+      <div class="stat-card even-card">
+        <div class="card-header"><span class="material-icons">recommend</span><h3>Recommended Action</h3></div>
+        <div id="action" class="action-text">Select a state to begin monitoring</div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>Powered by Google Gemini • Maps • Firebase • Real Google Mobility Data (India)</p>
+  </footer>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCnbcqDgTuXzAlI7fE-0fhw67XJdMgYwmc",
+      authDomain: "crowdbreak.firebaseapp.com",
+      databaseURL: "https://crowdbreak-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "crowdbreak",
+      storageBucket: "crowdbreak.firebasestorage.app",
+      messagingSenderId: "30006910852",
+      appId: "1:30006910852:web:f13b3c494d95197b04c7d1"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let map, heatmap;
+    let allZonesData = {};
+    let heatmapVisible = false;
+    let currentSearchedKey = null;
+
+    const baselineSignals = {
+      "andaman_and_nicobar_islands": 0.4, "andhra_pradesh": 55, "arunachal_pradesh": 1.5,
+      "assam": 35, "bihar": 110, "chandigarh": 1.5, "chhattisgarh": 32,
+      "dadra_and_nagar_haveli_and_daman_and_diu": 0.8, "delhi": 45, "goa": 2.5,
+      "gujarat": 80, "haryana": 35, "himachal_pradesh": 9, "jammu_and_kashmir": 15,
+      "jharkhand": 42, "karnataka": 80, "kerala": 40, "ladakh": 0.4, "lakshadweep": 0.08,
+      "madhya_pradesh": 95, "maharashtra": 150, "manipur": 3.5, "meghalaya": 3.8,
+      "mizoram": 1.4, "nagaland": 2.5, "odisha": 50, "puducherry": 2, "punjab": 40,
+      "rajasthan": 95, "sikkim": 0.8, "tamil_nadu": 95, "telangana": 50, "tripura": 4.5,
+      "uttar_pradesh": 280, "uttarakhand": 14, "west_bengal": 110
+    };
+
+    const stateNames = [
+      "Andaman and Nicobar Islands","Andhra Pradesh","Arunachal Pradesh","Assam","Bihar",
+      "Chandigarh","Chhattisgarh","Dadra and Nagar Haveli and Daman and Diu","Delhi","Goa",
+      "Gujarat","Haryana","Himachal Pradesh","Jammu and Kashmir","Jharkhand",
+      "Karnataka","Kerala","Ladakh","Lakshadweep","Madhya Pradesh",
+      "Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland",
+      "Odisha","Puducherry","Punjab","Rajasthan","Sikkim",
+      "Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal"
+    ];
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 5, center: { lat: 20.5937, lng: 78.9629 },
+        mapTypeId: "roadmap",
+        styles: [{"featureType":"poi","elementType":"labels","stylers":[{"visibility":"off"}]}],
+        mapTypeControl: false, streetViewControl: false, fullscreenControl: false
+      });
+      if (typeof google.maps.visualization !== 'undefined') {
+        heatmap = new google.maps.visualization.HeatmapLayer({
+          data: [], map: null, radius: 35, opacity: 0.85, dissipating: true,
+          gradient: ['rgba(0,255,0,0)', 'rgba(0,255,0,1)', 'rgba(255,255,0,1)', 'rgba(255,128,0,1)', 'rgba(255,0,0,1)']
+        });
+      }
+    }
+
+    const searchInput = document.getElementById("search-input");
+    const suggestionsBox = document.getElementById("suggestions");
+    searchInput.addEventListener("input", () => {
+      const value = searchInput.value.trim().toLowerCase();
+      suggestionsBox.innerHTML = ""; suggestionsBox.style.display = "none";
+      if (!value) return;
+      const matches = stateNames.filter(state => state.toLowerCase().includes(value)).slice(0, 8);
+      matches.forEach(state => {
+        const item = document.createElement("div");
+        item.className = "suggestion-item";
+        item.innerHTML = `<span class="material-icons">place</span> ${state}`;
+        item.onclick = () => { searchInput.value = state; suggestionsBox.style.display = "none"; performSearch(); };
+        suggestionsBox.appendChild(item);
+      });
+      if(matches.length > 0) suggestionsBox.style.display = "block";
+    });
+
+    function performSearch() {
+      const query = searchInput.value.trim();
+      if (!query) return;
+      const cleanQuery = query.toLowerCase().replace(/ /g, "_");
+      if (allZonesData[cleanQuery]) {
+        const zone = allZonesData[cleanQuery];
+        map.setCenter({ lat: zone.lat, lng: zone.lng });
+        map.setZoom(8);
+        currentSearchedKey = cleanQuery;
+        heatmapVisible = true;
+        updateHeatmap([zone]);
+        updateSignalCount();
+        document.getElementById("alert-bar").textContent = `Monitoring: ${query}`;
+      }
+    }
+
+    document.getElementById("search-btn").addEventListener("click", performSearch);
+    document.getElementById("reset-view").addEventListener("click", () => {
+      map.setCenter({ lat: 20.5937, lng: 78.9629 }); map.setZoom(5);
+      currentSearchedKey = null; heatmapVisible = true;
+      updateHeatmap(Object.values(allZonesData).filter(z => z.lat && z.lng));
+      updateSignalCount();
+    });
+
+    function updateHeatmap(zonesToShow) {
+      if (!heatmap) return;
+      const heatData = [];
+      zonesToShow.forEach(zone => {
+        if (zone && zone.lat && zone.lng && zone.density > 0) {
+          const intensity = Math.min(zone.density / 6, 30);
+          for (let i = 0; i < intensity; i++) {
+            heatData.push({
+              location: new google.maps.LatLng(zone.lat + (Math.random() - 0.5) * 0.05, zone.lng + (Math.random() - 0.5) * 0.05),
+              weight: 1.6
+            });
+          }
+        }
+      });
+      heatmap.setData(heatData);
+      heatmap.setMap(heatmapVisible ? map : null);
+    }
+
+    function updateSignalCount() {
+      let totalSignals = 0;
+      let zonesToCount = currentSearchedKey ? [allZonesData[currentSearchedKey]] : Object.values(allZonesData);
+      
+      zonesToCount.forEach(zone => {
+        const key = Object.keys(allZonesData).find(k => allZonesData[k] === zone);
+        if (key && baselineSignals[key]) {
+          const multiplier = 0.8 + (zone.density / 50) * 1.2;
+          totalSignals += baselineSignals[key] * multiplier;
+        }
+      });
+
+      let text = "Search a state...";
+      if (totalSignals > 0) {
+        text = totalSignals >= 1000 ? `~${(totalSignals / 1000).toFixed(1)} billion signals` : `~${totalSignals.toFixed(0)} million signals`;
+      }
+      document.getElementById("crowd-estimate").textContent = text;
+    }
+
+    document.getElementById('event-mode').addEventListener('change', (e) => {
+        db.ref('/simulationConfig').update({ currentMode: e.target.value });
+    });
+
+    // --- CRITICAL UPDATE: FIXED REAL-TIME LISTENER ---
+    db.ref('/final_demo_data').on('value', snapshot => {
+      const zones = snapshot.val() || {};
+      allZonesData = zones;
+      
+      if (heatmapVisible) {
+        // If searching a state, show only that state. Else show all valid states.
+        const zonesToShow = currentSearchedKey ? [zones[currentSearchedKey]] : Object.values(zones).filter(z => z.lat && z.lng);
+        updateHeatmap(zonesToShow);
+      }
+
+      // STRICTLY follow Python-generated risk data to prevent flickering
+      if (zones.risk) {
+        document.getElementById("risk-level").textContent = zones.risk.level || "Medium";
+        document.getElementById("explanation").textContent = zones.risk.explanation || "Analyzing data...";
+        document.getElementById("action").textContent = zones.risk.action || "Continue monitoring.";
+        
+        const rLevel = zones.risk.level ? zones.risk.level.toLowerCase() : 'low';
+        document.getElementById("alert-bar").className = `alert-banner alert-${rLevel}`;
+      } else {
+        document.getElementById("risk-level").textContent = "Wait...";
+        document.getElementById("explanation").textContent = "Receiving AI Stream...";
+      }
+      
+      updateSignalCount();
+    });
+
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+      document.body.classList.toggle("dark-mode");
+    });
+  </script>
+</body>
+</html>
